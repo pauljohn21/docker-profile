@@ -1,0 +1,136 @@
+version: '3.3'
+services:
+  nacos:
+    image: nacos/nacos-server:latest
+    container_name: nacos-standalone-mysql
+    environment:
+      PREFER_HOST_MODE: hostname
+      MODE: standalone
+      SPRING_DATASOURCE_PLATFORM: mysql
+      MYSQL_MASTER_SERVICE_HOST: mysql-master
+      MYSQL_MASTER_SERVICE_DB_NAME: nacos_devtest
+      MYSQL_MASTER_SERVICE_PORT: 3306
+      MYSQL_SLAVE_SERVICE_HOST: mysql-slave
+      MYSQL_SLAVE_SERVICE_PORT: 3305
+      MYSQL_MASTER_SERVICE_USER: nacos
+      MYSQL_MASTER_SERVICE_PASSWORD: nacos
+    volumes:
+      - ./data/standalone-logs/:/home/nacos/logs
+      - ./config/nacos/init.d/custom.properties:/home/nacos/init.d/custom.properties
+    ports:
+      - 8848:8848
+      - 9555:9555
+    depends_on:
+      - mysql-slave
+    restart: on-failure
+  mysql-master:
+    container_name: mysql-master
+    image: nacos/nacos-mysql-master:latest
+    environment:
+      TZ: Asia/Shanghai
+      MYSQL_ROOT_PASSWORD: root123456
+      MYSQL_REPLICATION_USER: nacos_ru
+      MYSQL_REPLICATION_PASSWORD: nacos_ru
+      MYSQL_DATABASE: nacos_devtest
+      MYSQL_USER: nacos
+      MYSQL_PASSWORD: nacos
+    volumes:
+      - ./data/mysql-master:/var/lib/mysql
+    ports:
+      - 3306:3306
+    command:
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_general_ci
+      --explicit_defaults_for_timestamp=true
+      --lower_case_table_names=1
+      --max_allowed_packet=128M
+  mysql-slave:
+    container_name: mysql-slave
+    image: nacos/nacos-mysql-slave:latest
+    environment:
+      MYSQL_ROOT_PASSWORD: root123456
+      MYSQL_REPLICATION_USER: nacos_ru
+      MYSQL_REPLICATION_PASSWORD: nacos_ru
+      MYSQL_MASTER_SERVICE_HOST: mysql-master
+    volumes:
+      - ./data/mysql-slave:/var/lib/mysql
+    ports:
+      - 3305:3306
+    depends_on:
+      - mysql-master
+  prometheus:
+    container_name: prometheus
+    image: prom/prometheus:latest
+    volumes:
+      - ./config/prometheus/prometheus-standalone.yaml:/etc/prometheus/prometheus.yml
+    ports:
+      - 9090:9090
+    depends_on:
+      - nacos
+    restart: on-failure
+  grafana:
+    container_name: grafana
+    image: grafana/grafana:latest
+    ports:
+      - 3000:3000
+    restart: on-failure
+
+  redis:
+    container_name: redis
+    image: redis:latest
+    ports:
+      - 6379:6379
+    volumes:
+      - ./data/redis:/data
+    command:
+      redis-server
+  elasticsearch:
+    image: wutang/elasticsearch-shanghai-zone:6.3.2
+    container_name: elasticsearch
+    restart: always
+    ports:
+      - 9200:9200
+      - 9300:9300
+    environment:
+      discovery.type: single-node
+  skywalking-oap:
+    image: wutang/skywalking-oap:6.1.0
+    container_name: skywalking-oap
+    depends_on:
+      - elasticsearch
+    links:
+      - elasticsearch
+    restart: always
+    ports:
+      - 11800:11800
+      - 12800:12800
+    environment:
+      SW_STORAGE_ES_CLUSTER_NODES: elasticsearch:9200
+    volumes:
+      - ./config/skywalking:/apache-skywalking-apm-bin/config:ro
+  skywalking-ui:
+    image: wutang/skywalking-ui:6.1.0
+    container_name: skywalking-ui
+    depends_on:
+      - skywalking-oap
+    links:
+      - skywalking-oap
+    restart: always
+    ports:
+      - 8842:8080
+    environment:
+      collector.ribbon.listOfServers: skywalking-oap:12800
+  sentinel-dashboard:
+    image: pauljohn21/sentinel-dashboard
+    container_name: sentinel-dashboard
+    restart: always
+    ports:
+      - 8843:8021
+    environment:
+      USERNAME: sentinel
+      PASSWORD: sentinel
+      SERVER_PORT: 8021
+      DASHBOARD_SERVER: localhost:8021
+      PROJECT_NAME: sentinel-dashboard
+      # JAVA_OPTS="-server -Xms1G -Xmx1G -XX:+AggressiveOpts -XX:MaxDirectMemorySize=1G"
+
