@@ -134,3 +134,42 @@ services:
       PROJECT_NAME: sentinel-dashboard
       # JAVA_OPTS="-server -Xms1G -Xmx1G -XX:+AggressiveOpts -XX:MaxDirectMemorySize=1G"
 
+  rocketmq-server:
+    image: pauljohn21/rocketmq:4.5.2
+    container_name: rocketmq-server
+    ports:
+      - 9876:9876
+    volumes:
+      - ./data/namesrv/logs:/home/rocketmq/logs
+    command: sh mqnamesrv
+
+  rocketmq-broker:
+    image: pauljohn21/rocketmq:4.5.2
+    container_name: rocketmq-broker
+    links:
+      - rocketmq-server
+    ports:
+      - 10909:10909
+      - 10911:10911
+      - 10912:10912
+    environment:
+      NAMESRV_ADDR: rocketmq-server:9876
+    volumes:
+      - ./data/broker/logs:/home/rocketmq/logs
+      - ./data/broker/store:/home/rocketmq/store
+      - ./config/broker/conf/broker.conf:/opt/rocketmq-4.5.2/conf/broker.conf
+    #command: sh mqbroker -n namesrv:9876
+    command: sh mqbroker -n rocketmq-server:9876 -c ../conf/broker.conf
+    depends_on:
+      - rocketmq-server
+
+  rocketmq-console:
+    image: styletang/rocketmq-console-ng:latest
+    container_name: rocketmq-console
+    ports:
+      - 8841:8080
+    depends_on:
+      - rocketmq-server
+    environment:
+      JAVA_OPTS: "-Drocketmq.namesrv.addr=127.0.0.1:9876 -Dcom.rocketmq.sendMessageWithVIPChannel=false"
+
